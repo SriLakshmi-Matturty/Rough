@@ -1,4 +1,6 @@
 from langchain.tools import BaseTool
+from pydantic import Field
+from typing import Optional
 
 class CalculatorTool(BaseTool):
     name: str = "calculator"
@@ -19,14 +21,12 @@ class CalculatorTool(BaseTool):
 class SearchTool(BaseTool):
     name: str = "search"
     description: str = "Use this tool to search factual information online."
-
-    def __init__(self, api_key=None):
-        self.api_key = api_key
-        super().__init__()
+    api_key: Optional[str] = Field(default=None)
 
     def _run(self, query: str):
         if not query:
             return "No query provided"
+        # Replace with real API call if needed
         return f"[SearchTool] Simulated search result for: {query}"
 
     async def _arun(self, query: str):
