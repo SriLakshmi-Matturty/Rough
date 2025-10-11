@@ -1,8 +1,8 @@
 from langchain.tools import BaseTool
 
 class CalculatorTool(BaseTool):
-    name = "calculator"
-    description = "Use this tool to perform arithmetic operations. Input should be a valid numeric expression."
+    name: str = "calculator"
+    description: str = "Use this tool to perform arithmetic operations. Input should be a valid numeric expression."
 
     def _run(self, expr: str):
         try:
@@ -17,8 +17,8 @@ class CalculatorTool(BaseTool):
         raise NotImplementedError("CalculatorTool does not support async")
 
 class SearchTool(BaseTool):
-    name = "search"
-    description = "Use this tool to search factual information online."
+    name: str = "search"
+    description: str = "Use this tool to search factual information online."
 
     def __init__(self, api_key=None):
         self.api_key = api_key
@@ -27,7 +27,6 @@ class SearchTool(BaseTool):
     def _run(self, query: str):
         if not query:
             return "No query provided"
-        # Replace with real API call or Wikipedia API
         return f"[SearchTool] Simulated search result for: {query}"
 
     async def _arun(self, query: str):
