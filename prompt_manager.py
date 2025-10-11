@@ -1,45 +1,5 @@
-# prompt_manager.py
-
+# Optional with LangChain: mostly handled internally
 class PromptManager:
-    def __init__(self):
-        pass
-
-    def build_tool_prompt(self, question: str) -> str:
-        return f"""
-You are a tool planner.
-
-Available tools:
-- calculator
-- wikipedia
-
-Respond ONLY with a JSON list of steps.
-Each step must have exactly this format:
-[
-  {{
-    "tool": "tool_name",
-    "query": "string query here"
-  }}
-]
-
-Example:
-[
-  {{"tool": "wikipedia", "query": "Albert Einstein"}}
-]
-
-Question: {question}
-JSON:
-"""
-
-    def build_final_prompt(self, question: str, results: list) -> str:
-        return f"""
-You are an answer composer.
-
-Question: {question}
-
-Tool results:
-{results}
-
-Write the final short answer using the tool results only.
-Do NOT invent facts.
-Answer:
-"""
+    @staticmethod
+    def build_final_prompt(question: str, tool_result_summary: str) -> str:
+        return f"Use ONLY the information below.\nTool output:\n{tool_result_summary}\nQuestion: {question}\nAnswer:"
