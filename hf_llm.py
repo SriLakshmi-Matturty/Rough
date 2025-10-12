@@ -1,26 +1,24 @@
-# hf_llm.py
-from transformers import pipeline
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-class HFLLM:
-    def __init__(self, model_name="EleutherAI/gpt-neo-1.3B", device=-1, max_new_tokens=256):
-        """
-        model_name: Hugging Face model name
-        device: -1 for CPU, 0 for GPU
-        max_new_tokens: max tokens to generate
-        """
-        self.generator = pipeline("text-generation", model=model_name, device=device)
-        self.max_new_tokens = max_new_tokens
-
-    def generate(self, prompt: str) -> str:
-        """
-        Generate text from the LLM given a prompt.
-        Returns a plain string.
-        """
-        outputs = self.generator(
-            prompt,
-            max_new_tokens=self.max_new_tokens,
-            do_sample=False,   # deterministic (can make True if you want creativity)
-            temperature=0.0,   # keep it factual
-            pad_token_id=self.generator.tokenizer.eos_token_id
+class LocalLLM:
+    def __init__(self, model_name: str):
+        print(f"[INFO] Loading model {model_name} ...")
+        # prevent chat-template probing
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            trust_remote_code=True,
+            local_files_only=False,
+            revision="main",
+            use_fast=False,        # avoids extra template requests
         )
-        return outputs[0]["generated_text"][len(prompt):].strip()
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map="auto",
+            torch_dtype="auto",
+            trust_remote_code=True,
+        )
+
+    def generate(self, prompt: str, max_new_tokens: int = 128):
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        outputs = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
+        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
