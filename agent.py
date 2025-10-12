@@ -1,34 +1,98 @@
-from langchain.chat_models import ChatOpenAI
-from langchain.agents import initialize_agent, Tool
+import re
 from tools import CalculatorTool, SearchTool
-from langchain.prompts import PromptTemplate
+from prompt_manager import PromptManager
+from hf_llm import LocalLLM
 
 class Agent:
-    def __init__(self, llm_model="mistralai/Mistral-7B-Instruct-v0.2", serpapi_key=None):
-        # Initialize tools
-        self.tools = [
-            CalculatorTool(),
-            SearchTool(api_key=serpapi_key)
-        ]
+    def _init_(self, llm_model=None, serpapi_key=None):
+        self.tools = {
+            "calculator": CalculatorTool(),
+            "search": SearchTool(serpapi_key)
+        }
+        self.llm = LocalLLM(model_name=llm_model)
 
-        # Wrap tools for LangChain
-        self.lc_tools = [Tool(name=t.name, func=t.run, description=t.description) for t in self.tools]
+    def decide_tool_and_expr(self, question: str):
+       
+        simple_math_pattern = r"^[\d\s\.\+\-\*/\(\)]+$"
+        if re.fullmatch(simple_math_pattern, question.replace(" ", "")):
+            print(f"[DEBUG] Detected simple numeric expression: {question}")
+            return "calculator", question
 
-        # Use HuggingFace model as LangChain chat model
-        from langchain.llms import HuggingFacePipeline
-        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-        tokenizer = AutoTokenizer.from_pretrained(llm_model)
-        model = AutoModelForCausalLM.from_pretrained(llm_model, torch_dtype="auto", device_map="auto")
-        pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=128)
-        self.llm = HuggingFacePipeline(pipeline=pipe)
+        prompt = f"""
+Classify the question as 'math' or 'factual'.
+If it is math, provide "math" and valid Python expression for the calculator, do not calculate answer just give the regular expression only
+(Example: If the question is 
+1) What is 2*3? then provide "math, 2*3"
+2) Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether in April and May? then provide "math, 48+(48/2)"
+3) Weng earns $12 an hour for babysitting. Yesterday, she just did 50 minutes of babysitting. How much did she earn?
+   then provide "math, (12/60)*50"
+4) Julie is reading a 120-page book. Yesterday, she was able to read 12 pages and today, she read twice as many pages as yesterday. If she wants to read half of the remaining pages tomorrow,
+   how many pages should she read? then provide "math, 120-(12+(12*2))"
+5) James writes a 3-page letter to 2 different friends twice a week.  How many pages does he write a year? then provide "math, ((3*2)*2)*52"
+).
+If it is factual then provide "factual, None".
+(Example: If the question is
+1) Who is President of America? then provide "factual, None"
+2) What is the captial of Australia? then provide "factual, None"
+3) What is the currency of India? then provide "factual, None"
+4) What is an AI? then provide "factual, None"
+5) Who is the synonym of happy? then provide "factual, None"
+).
+Do NOT generate extra questions or examples. Only give expression for the math question do not add extra questions to it.
 
-        # Initialize LangChain agent with tools
-        self.agent_executor = initialize_agent(
-            tools=self.lc_tools,
-            llm=self.llm,
-            agent="zero-shot-react-description",
-            verbose=True
+Q: {question}
+A:"""
+
+        response = self.llm.generate(prompt, max_new_tokens=64).strip()
+        print(f"[DEBUG] LLM response: {response}")
+
+        if "math" in response.lower():
+            expr_match = re.search(r"[\d\.\+\-\*/\(\)\s]+", response)
+            if expr_match:
+                expr = expr_match.group().strip()
+                print(f"[DEBUG] Extracted expression: {expr}")
+                return "calculator", expr
+
+        print("[DEBUG] Using SearchTool for factual question.")
+        return "search", None
+
+    def run(self, question: str) -> str:
+        tool_name, expr = self.decide_tool_and_expr(question)
+
+        if tool_name == "calculator":
+            if expr:
+                print(f"[DEBUG] Sending to CalculatorTool: {expr}")
+                return self.tools["calculator"].run(expr)
+            return "Calculator: Unable to parse expression"
+
+        if tool_name == "search":
+            return self.tools["search"].run(question)
+
+        return "Unable to handle question"
+#hf_llm.py
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+import torch
+
+class LocalLLM:
+    def _init_(self, model_name: str = "mistralai/Mistral-7B-Instruct-v0.2", device: str = None):
+        self.model_name = model_name
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+        print(f"Loading model {model_name} on {self.device}...")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            device_map="auto"
         )
 
-    def run(self, question: str):
-        return self.agent_executor.run(question)
+        self.pipe = pipeline(
+            "text-generation",
+            model=self.model,
+            tokenizer=self.tokenizer,
+            device_map="auto"
+        )
+
+    def generate(self, prompt: str, max_new_tokens: int = 256) -> str:
+        output = self.pipe(prompt, max_new_tokens=max_new_tokens, do_sample=True, temperature=0.3)
+        return output[0]["generated_text"].replace(prompt, "").strip()
