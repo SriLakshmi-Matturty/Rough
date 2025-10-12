@@ -1,33 +1,47 @@
-from langchain.tools import BaseTool
-from pydantic import Field
-from typing import Optional
+import math
+import requests
+import wikipedia
+import re
 
-class CalculatorTool(BaseTool):
-    name: str = "calculator"
-    description: str = "Use this tool to perform arithmetic operations. Input should be a valid numeric expression."
+wikipedia.set_lang("en")
 
-    def _run(self, expr: str):
+class CalculatorTool:
+    name = "calculator"
+
+    def run(self, expr: str) -> str:
         try:
-            allowed_chars = "0123456789+-*/.() "
-            if not all(c in allowed_chars for c in expr):
-                return "Calculator Error: Invalid characters"
-            return str(eval(expr))
+            safe_locals = {k: getattr(math, k) for k in dir(math) if not k.startswith("_")}
+            result = eval(expr, {"_builtins_": None}, safe_locals)
+            if isinstance(result, float) and result.is_integer():
+                result = int(result)
+            return str(result)
         except Exception as e:
             return f"Calculator Error: {e}"
 
-    async def _arun(self, expr: str):
-        raise NotImplementedError("CalculatorTool does not support async")
 
-class SearchTool(BaseTool):
-    name: str = "search"
-    description: str = "Use this tool to search factual information online."
-    api_key: Optional[str] = Field(default=None)
+class SearchTool:
+    name = "search"
 
-    def _run(self, query: str):
-        if not query:
-            return "No query provided"
-        # Replace with real API call if needed
-        return f"[SearchTool] Simulated search result for: {query}"
+    def _init_(self, serpapi_key):
+        self.api_key = serpapi_key
 
-    async def _arun(self, query: str):
-        raise NotImplementedError("SearchTool does not support async")
+    def run(self, query: str) -> str:
+        try:
+            # Call SerpAPI
+            url = "https://serpapi.com/search"
+            params = {
+                "q": query,
+                "api_key": self.api_key,
+                "num": 3,  # top 3 results
+            }
+            r = requests.get(url, params=params).json()
+            snippets = []
+            for res in r.get("organic_results", []):
+                snippet = res.get("snippet")
+                if snippet:
+                    snippets.append(snippet)
+            if not snippets:
+                return "No result found"
+            return "\n".join(snippets)
+        except Exception as e:
+            return f"Search Error: {e}"
