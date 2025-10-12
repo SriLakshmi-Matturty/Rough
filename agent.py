@@ -57,15 +57,36 @@ A:"""
         return "search", None
 
     def run(self, question: str) -> str:
+        """
+        Main execution pipeline:
+        1. Classify & extract expression
+        2. Use appropriate tool
+        3. Optionally summarize factual results via LLM
+        """
+        print(f"[INFO] Processing question: {question}")
         tool_name, expr = self.decide_tool_and_expr(question)
 
+        # 🧮 Math case
         if tool_name == "calculator":
             if expr:
                 print(f"[DEBUG] Sending to CalculatorTool: {expr}")
-                return self.tools["calculator"].run(expr)
-            return "Calculator: Unable to parse expression"
+                result = self.tools["calculator"].run(expr)
+                return result
+            return "Calculator Error: Unable to extract valid expression."
 
+        # 🌍 Factual case → use SearchTool and summarize using PromptManager
         if tool_name == "search":
-            return self.tools["search"].run(question)
+            raw_context = self.tools["search"].run(question)
+            print(f"[DEBUG] Raw SearchTool output: {raw_context}")
+
+            # Build summarization prompt
+            summary_prompt = PromptManager.build_final_prompt(
+                question=question,
+                tool_result_summary=raw_context
+            )
+
+            summarized = self.llm.generate(summary_prompt, max_new_tokens=128).strip()
+            print(f"[DEBUG] Summarized answer: {summarized}")
+            return summarized or raw_context
 
         return "Unable to handle question"
