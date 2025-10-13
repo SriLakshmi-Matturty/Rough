@@ -10,6 +10,7 @@ class Agent:
             "search": SearchTool(serpapi_key)
         }
         self.llm = LocalLLM(model_name=llm_model)
+        self.tool_calls = 0
 
     def decide_tool_and_expr(self, question: str):
        
@@ -63,19 +64,20 @@ A:"""
         2. Use appropriate tool
         3. Optionally summarize factual results via LLM
         """
+        self.tool_calls = 0
         print(f"[INFO] Processing question: {question}")
         tool_name, expr = self.decide_tool_and_expr(question)
 
-        # 🧮 Math case
         if tool_name == "calculator":
+            self.tool_calls += 1
             if expr:
                 print(f"[DEBUG] Sending to CalculatorTool: {expr}")
                 result = self.tools["calculator"].run(expr)
                 return result
             return "Calculator Error: Unable to extract valid expression."
 
-        # 🌍 Factual case → use SearchTool and summarize using PromptManager
         if tool_name == "search":
+            self.tool_calls += 1
             raw_context = self.tools["search"].run(question)
             print(f"[DEBUG] Raw SearchTool output: {raw_context}")
 
